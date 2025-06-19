@@ -15,11 +15,13 @@ function extractTags(text) {
   return tags;
 }
 
+let provider; // Declare here to use in scanDocument
+
 function scanDocument(doc) {
   if (doc.languageId !== "markdown") return;
   const tags = extractTags(doc.getText());
   tagMap.set(doc.uri.toString(), tags);
-  provider.refresh();
+  if (provider) provider.refresh();
 }
 
 // ─── Tree View Provider ────────────────────────────────────────────────────
@@ -29,39 +31,39 @@ class TagTreeProvider {
     this._onDidChange = new vscode.EventEmitter();
     this.onDidChangeTreeData = this._onDidChange.event;
   }
+
   refresh() {
     this._onDidChange.fire();
   }
+
   getChildren(element) {
     if (!element) {
-      // root: list all files with tags
       return Array.from(tagMap.entries()).map(
-        ([uri, tags]) => new vscode.TreeItem(path.basename(uri), vscode.TreeItemCollapsibleState.Collapsed, uri)
+        ([uri, tags]) => {
+          const item = new vscode.TreeItem(
+            path.basename(uri),
+            vscode.TreeItemCollapsibleState.Collapsed
+          );
+          item.tooltip = uri;
+          return item;
+        }
       );
     }
-    // element is a file URI, show its tags
     const tags = tagMap.get(element.tooltip) || new Set();
-    return Array.from(tags).map(tag => new vscode.TreeItem(`#${tag}`, vscode.TreeItemCollapsibleState.None));
+    return Array.from(tags).map(tag => new vscode.TreeItem(
+      `#${tag}`, vscode.TreeItemCollapsibleState.None
+    ));
   }
+
   getTreeItem(item) {
-    const treeItem = new vscode.TreeItem(
-      item.label,
-      item.collapsibleState
-    );
-    if (item.collapsibleState !== vscode.TreeItemCollapsibleState.None) {
-      treeItem.tooltip = item.tooltip;
-      treeItem.contextValue = "fileWithTags";
-    }
-    return treeItem;
+    return item;
   }
 }
 
 // ─── Extension Activation ──────────────────────────────────────────────────
 
-let provider;
-
 function activate(context) {
-  // Webview command
+  // Register Webview Command
   const disposable = vscode.commands.registerCommand("extension.showReactWebview", function () {
     const panel = vscode.window.createWebviewPanel(
       "reactWebview",
@@ -76,14 +78,14 @@ function activate(context) {
   });
   context.subscriptions.push(disposable);
 
-  // Tag detection
+  // Register Tag Detection Events
   context.subscriptions.push(
     vscode.workspace.onDidOpenTextDocument(scanDocument),
     vscode.workspace.onDidSaveTextDocument(scanDocument)
   );
   vscode.workspace.textDocuments.forEach(scanDocument);
 
-  // Tree view setup
+  // Register Tree View
   provider = new TagTreeProvider();
   vscode.window.registerTreeDataProvider("noteTags", provider);
   context.subscriptions.push(
@@ -116,4 +118,5 @@ function getWebviewContent(panel) {
 function deactivate() {}
 
 module.exports = { activate, deactivate };
+
 
